@@ -46,8 +46,14 @@ class Perceptron(LinearModel):
         y_i (scalar): the gold label for that example
         other arguments are ignored
         """
-        raise NotImplementedError # Q1.1 (a)
-
+        # Ex1.1
+        # Predict the label using the current weights
+        predicted_label = self.predict(x_i[np.newaxis, :])[0]
+        
+        # If the prediction is incorrect, update the weights
+        if predicted_label != y_i:
+            self.W[y_i] += x_i
+            self.W[predicted_label] -= x_i
 
 class LogisticRegression(LinearModel):
     def update_weight(self, x_i, y_i, learning_rate=0.001, l2_penalty=0.0, **kwargs):
@@ -147,6 +153,7 @@ def main():
 
     # initialize the model
     if opt.model == 'perceptron':
+        print(n_classes)
         model = Perceptron(n_classes, n_feats)
     elif opt.model == 'logistic_regression':
         model = LogisticRegression(n_classes, n_feats)
@@ -217,7 +224,6 @@ def main():
     with open(f"Q1-{opt.model}-results.txt", "w") as f:
         f.write(f"Final test acc: {model.evaluate(test_X, test_y)}\n")
         f.write(f"Training time: {minutes} minutes and {seconds} seconds\n")
-
 
 if __name__ == '__main__':
     main()
