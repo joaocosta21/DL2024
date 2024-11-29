@@ -46,7 +46,7 @@ class Perceptron(LinearModel):
         y_i (scalar): the gold label for that example
         other arguments are ignored
         """
-        # Ex1.1
+        # Q1.1 (a)
         # Predict the label using the current weights
         predicted_label = self.predict(x_i[np.newaxis, :])[0]
         
@@ -62,7 +62,20 @@ class LogisticRegression(LinearModel):
         y_i: the gold label for that example
         learning_rate (float): keep it at the default value for your plots
         """
-        raise NotImplementedError # Q1.2 (a,b)
+        # Q1.2 (a,b) multinominal logistic regression
+        # One-hot encode the gold label
+        y_one_hot = np.zeros(self.W.shape[0])
+        y_one_hot[y_i] = 1
+
+        # Compute scores and probabilities with softmax
+        scores = np.dot(self.W, x_i)  # (n_classes)
+        probs = np.exp(scores) / np.sum(np.exp(scores))
+
+        # Compute the gradient
+        gradient = np.outer((probs - y_one_hot), x_i)
+
+        # Update weights
+        self.W -= learning_rate * gradient
 
 
 class MLP(object):
