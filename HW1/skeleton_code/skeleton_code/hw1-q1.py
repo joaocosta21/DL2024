@@ -48,7 +48,7 @@ class Perceptron(LinearModel):
         """
         # Q1.1 (a)
         # Predict the label using the current weights
-        predicted_label = self.predict(x_i[np.newaxis, :])[0]
+        predicted_label = self.predict(x_i)
         
         # If the prediction is incorrect, update the weights
         if predicted_label != y_i:
