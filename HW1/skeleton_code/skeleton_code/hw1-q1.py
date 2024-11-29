@@ -75,6 +75,12 @@ class LogisticRegression(LinearModel):
         gradient = np.outer((probs - y_one_hot), x_i)
 
         # Update weights
+        # self.W -= learning_rate * gradient
+        
+        # update weights with L2 regularization
+        # Apply shrinkage factor
+        self.W *= (1 - learning_rate * l2_penalty)
+
         self.W -= learning_rate * gradient
 
 
