@@ -10,6 +10,18 @@ import matplotlib.pyplot as plt
 import time
 import utils
 
+def softmax(x):
+    x_exp = np.exp(x-np.max(x)) # regularizes x to the interval [-inf, 0] to avoid overflows in exp
+    return x_exp/x_exp.sum()
+
+def relu(x):
+    return np.maximum(0,x)
+
+def relu_prime(x):
+    return (x > 0)*1
+
+def cross_entropy_loss(y, y_hat, epsilon=1e-10):
+    return -np.log(y_hat[y] + epsilon)
 
 class LinearModel(object):
     def __init__(self, n_classes, n_features, **kwargs):
@@ -37,7 +49,6 @@ class LinearModel(object):
         n_correct = (y == y_hat).sum()
         n_possible = y.shape[0]
         return n_correct / n_possible
-
 
 class Perceptron(LinearModel):
     def update_weight(self, x_i, y_i, **kwargs):
@@ -78,7 +89,7 @@ class LogisticRegression(LinearModel):
         # self.W -= learning_rate * gradient
         
         # update weights with L2 regularization
-        # Apply shrinkage factor
+        # Apply weight decay factor
         self.W *= (1 - learning_rate * l2_penalty)
 
         self.W -= learning_rate * gradient
@@ -87,12 +98,25 @@ class LogisticRegression(LinearModel):
 class MLP(object):
     def __init__(self, n_classes, n_features, hidden_size):
         # Initialize an MLP with a single hidden layer.
-        raise NotImplementedError # Q1.3 (a)
-
+        # Q1.3 (a)
+        self.W1 = np.random.normal(0.1, 0.1, (hidden_size, n_features))
+        self.b1 = np.zeros(hidden_size)
+        self.W2 = np.random.normal(0.1, 0.1, (n_classes, hidden_size))
+        self.b2 = np.zeros(n_classes)
+ 
     def predict(self, X):
         # Compute the forward pass of the network. At prediction time, there is
         # no need to save the values of hidden nodes.
-        raise NotImplementedError # Q1.3 (a)
+        # Q1.3 (a)
+        y_pred = []
+        for inp in X:
+            z1 = self.W1.dot(inp) + self.b1
+            h1 = relu(z1)
+            z2 = self.W2.dot(h1) + self.b2
+            out = softmax(z2)
+            y_pred.append(np.argmax(out))
+
+        return np.array(y_pred)
 
     def evaluate(self, X, y):
         """
@@ -105,12 +129,35 @@ class MLP(object):
         n_possible = y.shape[0]
         return n_correct / n_possible
 
-    def train_epoch(self, X, y, learning_rate=0.001, **kwargs):
+    def train_epoch(self, X, y, learning_rate=0.001):
         """
         Dont forget to return the loss of the epoch.
         """
-        raise NotImplementedError # Q1.3 (a)
+        # Q1.3 (a)
+        
+        loss = 0
 
+        for inp,lab in zip(X,y):
+            z1 = self.W1.dot(inp) + self.b1
+            h1 = relu(z1)
+            z2 = self.W2.dot(h1) + self.b2
+            out = softmax(z2)
+
+            loss += cross_entropy_loss(lab, out)
+            
+            grad_z2 = out
+            grad_z2[lab] -= 1
+            grad_W2 = grad_z2[:,None] * h1[None,:]
+            grad_b2 = grad_z2
+            grad_z1 = self.W2.T.dot(grad_z2) * relu_prime(z1)
+            grad_W1 = grad_z1[:,None] * inp[None,:]
+            grad_b1 = grad_z1
+
+            self.W1 -= learning_rate * grad_W1
+            self.b1 -= learning_rate * grad_b1
+            self.W2 -= learning_rate * grad_W2
+            self.b2 -= learning_rate * grad_b2
+        return loss #/ len(X) ???
 
 def plot(epochs, train_accs, val_accs, filename=None):
     plt.xlabel('Epoch')
@@ -157,7 +204,7 @@ def main():
                         help="""Learning rate for parameter updates (needed for
                         logistic regression and MLP, but not perceptron)""")
     parser.add_argument('-l2_penalty', type=float, default=0.0,)
-    parser.add_argument('-data_path', type=str, default='intel_landscapes.npz',)
+    parser.add_argument('-data_path', type=str, default='intel_landscapes.v2.npz',)
     opt = parser.parse_args()
 
     utils.configure_seed(seed=42)
