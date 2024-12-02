@@ -59,12 +59,12 @@ class Perceptron(LinearModel):
         """
         # Q1.1 (a)
         # Predict the label using the current weights
-        predicted_label = self.predict(x_i)
+        y_hat = self.predict(x_i)
         
         # If the prediction is incorrect, update the weights
-        if predicted_label != y_i:
-            self.W[y_i] += x_i
-            self.W[predicted_label] -= x_i
+        if y_hat != y_i:
+            self.W[y_i, :] += x_i
+            self.W[y_hat, :] -= x_i
 
 class LogisticRegression(LinearModel):
     def update_weight(self, x_i, y_i, learning_rate=0.001, l2_penalty=0.0, **kwargs):
@@ -93,7 +93,6 @@ class LogisticRegression(LinearModel):
         self.W *= (1 - learning_rate * l2_penalty)
 
         self.W -= learning_rate * gradient
-
 
 class MLP(object):
     def __init__(self, n_classes, n_features, hidden_size):
