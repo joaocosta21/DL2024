@@ -12,6 +12,8 @@ from matplotlib import pyplot as plt
 import time
 import utils
 
+# Use LogisticRegression only for Part 1
+# Implement __init__(), forward() and train_batch() in LogisticRegression
 
 class LogisticRegression(nn.Module):
 
@@ -29,6 +31,10 @@ class LogisticRegression(nn.Module):
         super().__init__()
         # In a pytorch module, the declarations of layers needs to come after
         # the super __init__ line, otherwise the magic doesn't work.
+        self.linear = nn.Linear(n_features, n_classes)
+
+
+        
 
     def forward(self, x, **kwargs):
         """
@@ -44,8 +50,12 @@ class LogisticRegression(nn.Module):
         forward pass -- this is enough for it to figure out how to do the
         backward pass.
         """
-        raise NotImplementedError
+        # Use self.linear to compute the logits
+        logits = self.linear(x)
+        return logits
+        
 
+# Use FeedforwardNetwork only for Part 2 
 
 class FeedforwardNetwork(nn.Module):
     def __init__(
@@ -64,8 +74,29 @@ class FeedforwardNetwork(nn.Module):
         includes modules for several activation functions and dropout as well.
         """
         super().__init__()
-        # Implement me!
-        raise NotImplementedError
+        
+        # Define the activation function
+        if activation_type == 'relu':
+            self.activation = nn.ReLU()
+        elif activation_type == 'tanh':
+            self.activation = nn.Tanh()
+        else:
+            raise ValueError(f"Invalid activation type: {activation_type}")
+        
+        # Create a list to hold the layers
+        self.layers = nn.ModuleList()
+
+        # Input layer
+        self.layers.append(nn.Linear(n_features, hidden_size))
+
+        # Hidden layers
+        for _ in range(layers - 1):
+            self.layers.append(nn.Linear(hidden_size, hidden_size))
+            self.layers.append(self.activation)
+            self.layers.append(nn.Dropout(dropout))
+
+        # Output layer
+        self.layers.append(nn.Linear(hidden_size, n_classes))
 
     def forward(self, x, **kwargs):
         """
@@ -75,7 +106,10 @@ class FeedforwardNetwork(nn.Module):
         the output logits from x. This will include using various hidden
         layers, pointwise nonlinear functions, and dropout.
         """
-        raise NotImplementedError
+        output = x
+        for layer in self.layers:
+            output = layer(output)
+        return output
 
 
 def train_batch(X, y, model, optimizer, criterion, **kwargs):
@@ -96,7 +130,23 @@ def train_batch(X, y, model, optimizer, criterion, **kwargs):
     This function should return the loss (tip: call loss.item()) to get the
     loss as a numerical value that is not part of the computation graph.
     """
-    raise NotImplementedError
+    # Zero the gradients
+    optimizer.zero_grad()
+    
+    # Forward pass: compute predicted outputs by passing inputs to the model
+    outputs = model(X)
+    
+    # Compute the loss
+    loss = criterion(outputs, y)
+    
+    # Backward pass: compute gradient of the loss with respect to model parameters
+    loss.backward()
+    
+    # Perform a single optimization step (parameter update)
+    optimizer.step()
+    
+    # Return the loss as a scalar
+    return loss.item()
 
 
 def predict(model, X):
@@ -159,7 +209,7 @@ def main():
                         choices=['tanh', 'relu'], default='relu')
     parser.add_argument('-optimizer',
                         choices=['sgd', 'adam'], default='sgd')
-    parser.add_argument('-data_path', type=str, default='intel_landscapes.npz',)
+    parser.add_argument('-data_path', type=str, default='homeworks/HW1/skeleton_code/intel_landscapes.npz',)
     opt = parser.parse_args()
 
     utils.configure_seed(seed=42)
@@ -202,6 +252,7 @@ def main():
     epochs = torch.arange(1, opt.epochs + 1)
     train_losses = []
     valid_losses = []
+    test_accs = []
     valid_accs = []
 
     start = time.time()
@@ -218,15 +269,16 @@ def main():
 
         epoch_train_loss = torch.tensor(epoch_train_losses).mean().item()
         val_loss, val_acc = evaluate(model, dev_X, dev_y, criterion)
+        test_acc = evaluate(model, test_X, test_y, criterion)[1]
 
-        print('train loss: {:.4f} | val loss: {:.4f} | val acc: {:.4f}'.format(
-            epoch_train_loss, val_loss, val_acc
+        print('train loss: {:.4f} | val loss: {:.4f} | val acc: {:.4f} | test acc: {:.4f}'.format(
+            epoch_train_loss, val_loss, val_acc, test_acc
         ))
 
         train_losses.append(epoch_train_loss)
         valid_losses.append(val_loss)
         valid_accs.append(val_acc)
-
+        test_accs.append(test_acc)
     elapsed_time = time.time() - start
     minutes = int(elapsed_time // 60)
     seconds = int(elapsed_time % 60)
