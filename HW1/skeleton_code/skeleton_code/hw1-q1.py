@@ -20,7 +20,7 @@ def relu(x):
 def relu_prime(x):
     return (x > 0)*1
 
-def cross_entropy_loss(y, y_hat, epsilon=1e-10):
+def cross_entropy_loss(y, y_hat, epsilon=1e-6):
     return -np.log(y_hat[y] + epsilon)
 
 class LinearModel(object):
@@ -141,7 +141,7 @@ class MLP(object):
             h1 = relu(z1)
             z2 = self.W2.dot(h1) + self.b2
             out = softmax(z2)
-
+            
             loss += cross_entropy_loss(lab, out)
             
             grad_z2 = out
@@ -156,7 +156,7 @@ class MLP(object):
             self.b1 -= learning_rate * grad_b1
             self.W2 -= learning_rate * grad_W2
             self.b2 -= learning_rate * grad_b2
-        return loss #/ len(X) ???
+        return loss / len(X)
 
 def plot(epochs, train_accs, val_accs, filename=None):
     plt.xlabel('Epoch')
