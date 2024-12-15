@@ -68,13 +68,11 @@ class FeedforwardNetwork(nn.Module):
         layers (int)
         activation_type (str)
         dropout (float): dropout probability
-
-        As in logistic regression, the __init__ here defines a bunch of
-        attributes that each FeedforwardNetwork instance has. Note that nn
-        includes modules for several activation functions and dropout as well.
         """
         super().__init__()
         
+        self.layers = nn.ModuleList()
+
         # Define the activation function
         if activation_type == 'relu':
             self.activation = nn.ReLU()
@@ -82,34 +80,30 @@ class FeedforwardNetwork(nn.Module):
             self.activation = nn.Tanh()
         else:
             raise ValueError(f"Invalid activation type: {activation_type}")
-        
-        # Create a list to hold the layers
-        self.layers = nn.ModuleList()
 
         # Input layer
         self.layers.append(nn.Linear(n_features, hidden_size))
 
         # Hidden layers
-        for _ in range(layers - 1):
+        for _ in range(layers):
             self.layers.append(nn.Linear(hidden_size, hidden_size))
-            self.layers.append(self.activation)
-            self.layers.append(nn.Dropout(dropout))
 
         # Output layer
-        self.layers.append(nn.Linear(hidden_size, n_classes))
+        self.output_layer = nn.Linear(hidden_size, n_classes)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, **kwargs):
         """
         x (batch_size x n_features): a batch of training examples
-
-        This method needs to perform all the computation needed to compute
-        the output logits from x. This will include using various hidden
-        layers, pointwise nonlinear functions, and dropout.
         """
-        output = x
         for layer in self.layers:
-            output = layer(output)
-        return output
+            x = layer(x)
+            x = self.activation(x)
+            x = self.dropout(x)
+        
+        # Apply the output layer without activation or dropout
+        x = self.output_layer(x)
+        return x
 
 
 def train_batch(X, y, model, optimizer, criterion, **kwargs):
@@ -130,6 +124,9 @@ def train_batch(X, y, model, optimizer, criterion, **kwargs):
     This function should return the loss (tip: call loss.item()) to get the
     loss as a numerical value that is not part of the computation graph.
     """
+
+    model.train()
+
     # Zero the gradients
     optimizer.zero_grad()
     
@@ -209,7 +206,7 @@ def main():
                         choices=['tanh', 'relu'], default='relu')
     parser.add_argument('-optimizer',
                         choices=['sgd', 'adam'], default='sgd')
-    parser.add_argument('-data_path', type=str, default='homeworks/HW1/skeleton_code/intel_landscapes.npz',)
+    parser.add_argument('-data_path', type=str, default='homeworks/HW1/skeleton_code/intel_landscapes.v2.npz',)
     opt = parser.parse_args()
 
     utils.configure_seed(seed=42)
@@ -252,7 +249,7 @@ def main():
     epochs = torch.arange(1, opt.epochs + 1)
     train_losses = []
     valid_losses = []
-    test_accs = []
+    #test_accs = []
     valid_accs = []
 
     start = time.time()
@@ -269,16 +266,16 @@ def main():
 
         epoch_train_loss = torch.tensor(epoch_train_losses).mean().item()
         val_loss, val_acc = evaluate(model, dev_X, dev_y, criterion)
-        test_acc = evaluate(model, test_X, test_y, criterion)[1]
+        #test_acc = evaluate(model, test_X, test_y, criterion)[1]
 
-        print('train loss: {:.4f} | val loss: {:.4f} | val acc: {:.4f} | test acc: {:.4f}'.format(
-            epoch_train_loss, val_loss, val_acc, test_acc
+        print('train loss: {:.4f} | val loss: {:.4f} | val acc: {:.4f}'.format(
+            epoch_train_loss, val_loss, val_acc
         ))
 
         train_losses.append(epoch_train_loss)
         valid_losses.append(val_loss)
         valid_accs.append(val_acc)
-        test_accs.append(test_acc)
+        #test_accs.append(test_acc)
     elapsed_time = time.time() - start
     minutes = int(elapsed_time // 60)
     seconds = int(elapsed_time % 60)
