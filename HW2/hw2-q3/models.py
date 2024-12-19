@@ -87,7 +87,30 @@ class Encoder(nn.Module):
         # - Use torch.nn.utils.rnn.pad_packed_sequence to unpack the packed sequences
         #   (after passing them to the LSTM)
         #############################################
+        # Embed the source sequences and apply dropout
+        embedded = self.dropout(self.embedding(src))  # (batch_size, max_src_len, hidden_size)
+        print(f"Embedded shape: {embedded.shape}")
+
+        # Pack the sequences to handle variable-length inputs
+        packed = nn.utils.rnn.pack_padded_sequence(embedded, lengths, batch_first=True, enforce_sorted=False)
         
+        # Pass through the LSTM
+        packed_output, (hidden, cell) = self.lstm(packed)
+        
+        # Unpack the sequences
+        enc_output, _ = nn.utils.rnn.pad_packed_sequence(packed_output, batch_first=True)
+        print(f"Encoder output shape: {enc_output.shape}")
+        
+        # Apply dropout to the encoder outputs
+        enc_output = self.dropout(enc_output)  # (batch_size, max_src_len, hidden_size)
+
+        # Concatenate the forward and backward hidden and cell states
+        hidden = torch.cat((hidden[0], hidden[1]), dim=1).unsqueeze(0)  # (1, batch_size, hidden_size * 2)
+        cell = torch.cat((cell[0], cell[1]), dim=1).unsqueeze(0)        # (1, batch_size, hidden_size * 2)
+        
+        print(f"Hidden shape: {hidden.shape}, Cell shape: {cell.shape}")
+
+        return enc_output, (hidden, cell)
 
         #############################################
         # END OF YOUR CODE
@@ -95,7 +118,6 @@ class Encoder(nn.Module):
         # enc_output: (batch_size, max_src_len, hidden_size)
         # final_hidden: tuple with 2 tensors
         # each tensor is (num_layers * num_directions, batch_size, hidden_size)
-        raise NotImplementedError("Add your implementation.")
 
 
 class Decoder(nn.Module):
@@ -158,7 +180,42 @@ class Decoder(nn.Module):
         #         src_lengths,
         #     )
         #############################################
-        
+        print(f"Target (tgt) shape: {tgt.shape}")
+        print(f"Decoder state (dec_state) hidden shape: {dec_state[0].shape}")
+        print(f"Decoder state (dec_state) cell shape: {dec_state[1].shape}")
+
+        # Reshape the decoder states if bidirectional
+        if dec_state[0].shape[0] == 2:
+            dec_state = reshape_state(dec_state)
+
+        # Embed the target sequence and apply dropout
+        embedded = self.dropout(self.embedding(tgt))  # (batch_size, max_tgt_len, hidden_size)
+        print(f"Embedded target shape: {embedded.shape}")
+
+        # Initialize a list to store the outputs for all time steps
+        outputs = []
+
+        # Iterate over each time step
+        for t in range(tgt.size(1)):  # max_tgt_len
+            # Extract the embedding for the current time step
+            input_t = embedded[:, t, :].unsqueeze(1)  # (batch_size, 1, hidden_size)
+            print(f"Input at time {t} shape: {input_t.shape}")
+
+            # Pass through the LSTM cell
+            output, dec_state = self.lstm(input_t, dec_state)  # (batch_size, 1, hidden_size)
+            print(f"LSTM output shape at time {t}: {output.shape}")
+
+            # Apply dropout to the LSTM output
+            output = self.dropout(output)  # (batch_size, 1, hidden_size)
+
+            # Append the output for the current time step
+            outputs.append(output)
+
+        # Concatenate the outputs along the time dimension
+        outputs = torch.cat(outputs, dim=1)  # (batch_size, max_tgt_len, hidden_size)
+        print(f"Final outputs shape: {outputs.shape}")
+
+        return outputs, dec_state
 
         #############################################
         # END OF YOUR CODE
@@ -166,7 +223,6 @@ class Decoder(nn.Module):
         # outputs: (batch_size, max_tgt_len, hidden_size)
         # dec_state: tuple with 2 tensors
         # each tensor is (num_layers, batch_size, hidden_size)
-        raise NotImplementedError("Add your implementation.")
 
 
 class Seq2Seq(nn.Module):
