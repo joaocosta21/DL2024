@@ -19,8 +19,8 @@ class ConvBlock(nn.Module):
             self,
             in_channels,
             out_channels,
-            kernel_size,
-            padding=None,
+            kernel_size=3,
+            padding=1,
             maxpool=True,
             batch_norm=True,
             dropout=0.0
@@ -28,22 +28,41 @@ class ConvBlock(nn.Module):
         super().__init__()
 
         # Q2.1. Initialize convolution, maxpool, activation and dropout layers 
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=1, padding=padding)
+        self.activation = nn.ReLU()
+        self.dropout = nn.Dropout(dropout)
         
+        if maxpool:
+            self.maxpool = nn.MaxPool2d(kernel_size=2, stride=2)
+        else:
+            self.maxpool = None
         
         # Q2.2 Initialize batchnorm layer 
-        
-        raise NotImplementedError
+        if batch_norm:
+            self.batch_norm = nn.BatchNorm2d(out_channels)
+        else:
+            self.batch_norm = None
+
+        # raise NotImplementedError
 
     def forward(self, x):
         # input for convolution is [b, c, w, h]
         
         # Implement execution of layers in right order
+        x = self.conv(x)
+        if self.batch_norm:
+            x = self.batch_norm(x)
+        x = self.activation(x)
+        if self.maxpool:
+            x = self.maxpool(x)
+        x = self.dropout(x)
 
-        raise NotImplementedError
+        # raise NotImplementedError
+        return x
 
 
 class CNN(nn.Module):
-    def __init__(self, dropout_prob, maxpool=True, batch_norm=True, conv_bias=True):
+    def __init__(self, dropout_prob = 0.1, maxpool=True, batch_norm=True, conv_bias=True):
         super(CNN, self).__init__()
         channels = [3, 32, 64, 128]
         fc1_out_dim = 1024
@@ -52,19 +71,55 @@ class CNN(nn.Module):
         self.batch_norm = batch_norm
 
         # Initialize convolutional blocks
+        self.conv1 = ConvBlock(channels[0], channels[1], kernel_size=3, padding=1, maxpool=maxpool, dropout=dropout_prob, batch_norm=batch_norm)
+        self.conv2 = ConvBlock(channels[1], channels[2], kernel_size=3, padding=1, maxpool=maxpool, dropout=dropout_prob, batch_norm=batch_norm)
+        self.conv3 = ConvBlock(channels[2], channels[3], kernel_size=3, padding=1, maxpool=maxpool, dropout=dropout_prob, batch_norm=batch_norm)
         
+        self.global_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
+
+        self.flattened_size = channels[3]  # Adjust based on actual output size after conv layers
+
+
         # Initialize layers for the MLP block
-        # For Q2.2 initalize batch normalization
+        self.fc1 = nn.Linear(self.flattened_size, fc1_out_dim)
+        self.bn1 = nn.BatchNorm1d(fc1_out_dim) if batch_norm else nn.Identity()
+        self.dropout1 = nn.Dropout(dropout_prob)
+
+        self.fc2 = nn.Linear(fc1_out_dim, fc2_out_dim)
+        self.bn2 = nn.BatchNorm1d(fc2_out_dim) if batch_norm else nn.Identity()
+        self.dropout2 = nn.Dropout(dropout_prob)
+
+        self.fc3 = nn.Linear(fc2_out_dim, 6)
         
+        # For Q2.2 initalize batch normalization
 
     def forward(self, x):
         x = x.reshape(x.shape[0], 3, 48, -1)
 
         # Implement execution of convolutional blocks 
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
         
+        x = self.global_avg_pool(x)
+
         # Flattent output of the last conv block
-        
+        x = x.view(x.size(0), -1)
+
         # Implement MLP part
+        x = self.fc1(x)
+        if self.bn1:
+            x = self.bn1(x)
+        x = F.relu(x)
+        x = self.dropout1(x)
+        
+        x = self.fc2(x)
+        if self.bn2:
+            x = self.bn2(x)
+        x = F.relu(x)
+        x = self.dropout2(x)
+        
+        x = self.fc3(x)
         
         # For Q2.2 implement global averag pooling
         
@@ -150,7 +205,7 @@ def main():
                         choices=['sgd', 'adam'], default='sgd')
     parser.add_argument('-no_maxpool', action='store_true')
     parser.add_argument('-no_batch_norm', action='store_true')
-    parser.add_argument('-data_path', type=str, default='intel_landscapes.v2.npz',)
+    parser.add_argument('-data_path', type=str, default='homeworks/HW2/hw2_skeleton_code/hw2-q2/intel_landscapes.v2.npz',)
     parser.add_argument('-device', choices=['cpu', 'cuda', 'mps'], default='cpu')
 
     opt = parser.parse_args()
@@ -218,7 +273,7 @@ def main():
     plot(epochs, train_mean_losses, ylabel='Loss', name='CNN-3-train-loss-{}-{}'.format(sufix, test_acc_str))
     plot(epochs, valid_accs, ylabel='Accuracy', name='CNN-3-valid-accuracy-{}-{}'.format(sufix, test_acc_str))
 
-    print('Number of trainable parameters: ', get_number_trainable_params(model))
+    #print('Number of trainable parameters: ', get_number_trainable_params(model))
 
 if __name__ == '__main__':
     main()
