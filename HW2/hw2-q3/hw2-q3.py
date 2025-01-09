@@ -231,8 +231,26 @@ def nucleus_sampling(logits, p=0.8):
     # 3. Rescale the distribution and sample from the resulting set of tokens.
     # Implementation of the steps as described above:
 
-    raise NotImplementedError("Add your implementation.")
+    # Step 1: Transform the logits into probabilities
+    probabilities = torch.softmax(logits, dim=-1)
 
+    # Step 2: Sort probabilities in descending order and compute their cumulative sum
+    sorted_probs, sorted_indices = torch.sort(probabilities, descending=True)
+    cumulative_probs = torch.cumsum(sorted_probs, dim=0)
+
+    # Step 3: Identify the smallest set of tokens whose cumulative probability mass exceeds p
+    cutoff_index = torch.searchsorted(cumulative_probs, p).item() + 1
+    top_p_indices = sorted_indices[:cutoff_index]
+
+    # Step 4: Rescale probabilities for the top-p tokens
+    top_p_probs = sorted_probs[:cutoff_index]
+    top_p_probs /= top_p_probs.sum()
+
+    # Step 5: Sample a token from the re-scaled distribution
+    next_token = torch.multinomial(top_p_probs, 1).item()
+    
+    # Return the actual index of the sampled token
+    return top_p_indices[next_token]
 
 def main(args):
 

@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence as pack
 from torch.nn.utils.rnn import pad_packed_sequence as unpack
-
+import torch.nn.functional as F
 
 def reshape_state(state):
     h_state = state[0]
@@ -21,7 +21,10 @@ class BahdanauAttention(nn.Module):
     def __init__(self, hidden_size):
         super(BahdanauAttention, self).__init__()
         
-        raise NotImplementedError("Add your implementation.")
+        self.W_s = nn.Linear(hidden_size, hidden_size, bias=False)
+        self.W_h = nn.Linear(hidden_size, hidden_size, bias=False)
+        self.v = nn.Linear(hidden_size, 1, bias=False)
+        self.W_out = nn.Linear(hidden_size * 2, hidden_size)
 
     def forward(self, query, encoder_outputs, src_lengths):
         """
@@ -31,9 +34,34 @@ class BahdanauAttention(nn.Module):
         Returns:
             attn_out:   (batch_size, max_tgt_len, hidden_size) - attended vector
         """
-
-        raise NotImplementedError("Add your implementation.")
-
+        
+        # Expand dimensions for broadcasting
+        query = query.unsqueeze(2)  # (batch_size, max_tgt_len, 1, hidden_size)
+        encoder_outputs = encoder_outputs.unsqueeze(1)  # (batch_size, 1, max_src_len, hidden_size)
+        
+        # Compute alignment scores
+        scores = self.v(torch.tanh(
+            self.W_s(query) + self.W_h(encoder_outputs)
+        )).squeeze(-1)  # (batch_size, max_tgt_len, max_src_len)
+        
+        # Mask padding positions
+        mask = self.sequence_mask(src_lengths).unsqueeze(1)  # (batch_size, 1, max_src_len)
+        scores = scores.masked_fill(~mask, float('-inf'))  # Mask padding tokens
+        
+        # Normalize scores with softmax to get attention weights
+        attn_weights = F.softmax(scores, dim=-1)  # (batch_size, max_tgt_len, max_src_len)
+        
+        # Compute context vectors (weighted sum of encoder outputs)
+        context = torch.bmm(attn_weights, encoder_outputs.squeeze(1))  # (batch_size, max_tgt_len, hidden_size)
+        
+        # Concatenate context vector and decoder hidden state
+        attention_combined = torch.cat((context, query.squeeze(2)), dim=-1)  # [c_t; s_{t-1}]
+        
+        # Apply linear transformation and tanh for attention-enhanced decoder state
+        attn_out = torch.tanh(self.W_out(attention_combined))  # (batch_size, max_tgt_len, hidden_size)
+        
+        return attn_out
+    
     def sequence_mask(self, lengths):
         """
         Creates a boolean mask from sequence lengths.
@@ -89,28 +117,20 @@ class Encoder(nn.Module):
         #############################################
         # Embed the source sequences and apply dropout
         embedded = self.dropout(self.embedding(src))  # (batch_size, max_src_len, hidden_size)
-        print(f"Embedded shape: {embedded.shape}")
 
         # Pack the sequences to handle variable-length inputs
-        packed = nn.utils.rnn.pack_padded_sequence(embedded, lengths, batch_first=True, enforce_sorted=False)
+        packed = pack(embedded, lengths.cpu(), batch_first=True, enforce_sorted=False)
         
         # Pass through the LSTM
-        packed_output, (hidden, cell) = self.lstm(packed)
+        packed_output, final_hidden = self.lstm(packed)
         
         # Unpack the sequences
-        enc_output, _ = nn.utils.rnn.pad_packed_sequence(packed_output, batch_first=True)
-        print(f"Encoder output shape: {enc_output.shape}")
+        enc_output, _ = unpack(packed_output, batch_first=True)
         
-        # Apply dropout to the encoder outputs
+        # Apply dropout to the encoder outputs #TODO queremos dar droupout da ultima layer do encoder
         enc_output = self.dropout(enc_output)  # (batch_size, max_src_len, hidden_size)
 
-        # Concatenate the forward and backward hidden and cell states
-        hidden = torch.cat((hidden[0], hidden[1]), dim=1).unsqueeze(0)  # (1, batch_size, hidden_size * 2)
-        cell = torch.cat((cell[0], cell[1]), dim=1).unsqueeze(0)        # (1, batch_size, hidden_size * 2)
-        
-        print(f"Hidden shape: {hidden.shape}, Cell shape: {cell.shape}")
-
-        return enc_output, (hidden, cell)
+        return enc_output, final_hidden
 
         #############################################
         # END OF YOUR CODE
@@ -180,42 +200,35 @@ class Decoder(nn.Module):
         #         src_lengths,
         #     )
         #############################################
-        print(f"Target (tgt) shape: {tgt.shape}")
-        print(f"Decoder state (dec_state) hidden shape: {dec_state[0].shape}")
-        print(f"Decoder state (dec_state) cell shape: {dec_state[1].shape}")
-
-        # Reshape the decoder states if bidirectional
-        if dec_state[0].shape[0] == 2:
-            dec_state = reshape_state(dec_state)
-
         # Embed the target sequence and apply dropout
-        embedded = self.dropout(self.embedding(tgt))  # (batch_size, max_tgt_len, hidden_size)
-        print(f"Embedded target shape: {embedded.shape}")
+        
+        if tgt.shape[1] > 1:
+            tgt = tgt[:, :-1]
+            
+        # Embed the target sequence and apply dropout
+        embedded = self.dropout(self.embedding(tgt))  # (batch_size, max_tgt_len - 1, hidden_size)
 
-        # Initialize a list to store the outputs for all time steps
-        outputs = []
+        # Pack the embedded target sequence
+        tgt_lengths = (tgt != self.embedding.padding_idx).sum(dim=1)  # Compute lengths dynamically
+        packed_embedded = pack(embedded, tgt_lengths.cpu(), batch_first=True, enforce_sorted=False)
 
-        # Iterate over each time step
-        for t in range(tgt.size(1)):  # max_tgt_len
-            # Extract the embedding for the current time step
-            input_t = embedded[:, t, :].unsqueeze(1)  # (batch_size, 1, hidden_size)
-            print(f"Input at time {t} shape: {input_t.shape}")
+        # Pass the packed sequence through the LSTM
+        packed_output, dec_state = self.lstm(packed_embedded, dec_state)
 
-            # Pass through the LSTM cell
-            output, dec_state = self.lstm(input_t, dec_state)  # (batch_size, 1, hidden_size)
-            print(f"LSTM output shape at time {t}: {output.shape}")
+        # Unpack the output
+        output, _ = unpack(packed_output, batch_first=True)  # (batch_size, max_tgt_len - 1, hidden_size)
 
-            # Apply dropout to the LSTM output
-            output = self.dropout(output)  # (batch_size, 1, hidden_size)
-
-            # Append the output for the current time step
-            outputs.append(output)
-
-        # Concatenate the outputs along the time dimension
-        outputs = torch.cat(outputs, dim=1)  # (batch_size, max_tgt_len, hidden_size)
-        print(f"Final outputs shape: {outputs.shape}")
-
-        return outputs, dec_state
+        # Apply dropout to the unpacked output
+        output = self.dropout(output)
+        
+        if self.attn is not None:
+                    output = self.attn(
+                        output,
+                        encoder_outputs,
+                        src_lengths,
+                    )
+                    
+        return output, dec_state
 
         #############################################
         # END OF YOUR CODE
