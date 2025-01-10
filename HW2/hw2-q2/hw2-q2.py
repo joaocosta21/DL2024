@@ -30,18 +30,22 @@ class ConvBlock(nn.Module):
         # Q2.1. Initialize convolution, maxpool, activation and dropout layers 
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=1, padding=padding)
         self.activation = nn.ReLU()
-        self.dropout = nn.Dropout(dropout)
         
+        self.maxpool = maxpool
         if maxpool:
-            self.maxpool = nn.MaxPool2d(kernel_size=2, stride=2)
+            self.maxpool_layer = nn.MaxPool2d(kernel_size=2, stride=2) 
         else:
-            self.maxpool = None
+            self.maxpool_layer = nn.Identity()
         
+        self.dropout = nn.Dropout(dropout)
+
         # Q2.2 Initialize batchnorm layer 
+        self.batch_norm = batch_norm
+
         if batch_norm:
-            self.batch_norm = nn.BatchNorm2d(out_channels)
+            self.batch_norm_layer = nn.BatchNorm2d(out_channels)
         else:
-            self.batch_norm = None
+            self.batch_norm_layer = nn.Identity()
 
         # raise NotImplementedError
 
@@ -50,11 +54,11 @@ class ConvBlock(nn.Module):
         
         # Implement execution of layers in right order
         x = self.conv(x)
-        if self.batch_norm:
-            x = self.batch_norm(x)
+    
+        x = self.batch_norm_layer(x)
         x = self.activation(x)
-        if self.maxpool:
-            x = self.maxpool(x)
+        
+        x = self.maxpool_layer(x)
         x = self.dropout(x)
 
         # raise NotImplementedError
@@ -77,8 +81,8 @@ class CNN(nn.Module):
         
         self.global_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
 
-        self.flattened_size = channels[3]  # Adjust based on actual output size after conv layers
-
+        self.flattened_size = channels[3] if batch_norm else channels[3]  * 6 * 6
+        #self.flattened_size = channels[3]
 
         # Initialize layers for the MLP block
         self.fc1 = nn.Linear(self.flattened_size, fc1_out_dim)
@@ -86,8 +90,8 @@ class CNN(nn.Module):
         self.dropout1 = nn.Dropout(dropout_prob)
 
         self.fc2 = nn.Linear(fc1_out_dim, fc2_out_dim)
-        self.bn2 = nn.BatchNorm1d(fc2_out_dim) if batch_norm else nn.Identity()
-        self.dropout2 = nn.Dropout(dropout_prob)
+        #self.bn2 = nn.BatchNorm1d(fc2_out_dim) if batch_norm else nn.Identity()
+        #self.dropout2 = nn.Dropout(dropout_prob)
 
         self.fc3 = nn.Linear(fc2_out_dim, 6)
         
@@ -101,23 +105,26 @@ class CNN(nn.Module):
         x = self.conv2(x)
         x = self.conv3(x)
         
-        x = self.global_avg_pool(x)
+        if self.batch_norm:
+            x = self.global_avg_pool(x)
+            x = x.view(x.size(0), -1)
+        else:             
+            x = x.view(x.size(0), -1)
+
 
         # Flattent output of the last conv block
-        x = x.view(x.size(0), -1)
 
         # Implement MLP part
         x = self.fc1(x)
-        if self.bn1:
-            x = self.bn1(x)
         x = F.relu(x)
+    
+        x = self.bn1(x)
         x = self.dropout1(x)
         
         x = self.fc2(x)
-        if self.bn2:
-            x = self.bn2(x)
+        #x = self.bn2(x)
         x = F.relu(x)
-        x = self.dropout2(x)
+        #x = self.dropout2(x)
         
         x = self.fc3(x)
         
@@ -178,7 +185,9 @@ def plot(epochs, plottable, ylabel='', name=''):
 
 
 def get_number_trainable_params(model):
-    raise NotImplementedError
+    #raise NotImplementedError
+    total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    return total_params
 
 
 def plot_file_name_sufix(opt, exlude):
@@ -273,7 +282,7 @@ def main():
     plot(epochs, train_mean_losses, ylabel='Loss', name='CNN-3-train-loss-{}-{}'.format(sufix, test_acc_str))
     plot(epochs, valid_accs, ylabel='Accuracy', name='CNN-3-valid-accuracy-{}-{}'.format(sufix, test_acc_str))
 
-    #print('Number of trainable parameters: ', get_number_trainable_params(model))
+    print('Number of trainable parameters: ', get_number_trainable_params(model))
 
 if __name__ == '__main__':
     main()
